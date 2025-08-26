@@ -1,0 +1,41 @@
+cc_import(
+	name="libbpf",
+        shared_library="include/libbpf.so",	
+)
+
+cc_library(
+    name = "yaml-cpp",
+    includes = ["include"],
+    hdrs = glob(["include/yaml-cpp/**/*.h"]),
+    srcs = glob(["yaml-src/**/*.cpp", "yaml-src/**/*.h"]),
+ 
+)
+
+cc_library(
+    name = "probe_include",
+    includes = ["include/probe"],
+    hdrs = glob(["include/probe/*.h"]),
+    deps = [
+        ":yaml-cpp"
+    ],
+)
+
+cc_library(
+    name = "cmdline",
+    includes = ["include"],
+    hdrs = glob(["include/cmdline.h"]),
+ 
+)
+
+
+cc_binary(
+   name = "probe",
+   srcs = ["probe.cc"],
+   copts = ["-Wno-deprecated-copy", "-Wno-deprecated-declarations", "-Wno-error=deprecated-declarations"],
+   deps = [
+	    ":libbpf",
+        ":yaml-cpp",
+        ":probe_include",
+        ":cmdline",
+   ],
+)

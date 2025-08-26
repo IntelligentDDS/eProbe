@@ -1,9 +1,6 @@
 #include "./include/vmlinux.h"
-// <bpf/bpf_tracing.h>头文件识别不了以及关于x86架构读取参数的定义无法识别
 #include "./include/bpf_tracing.h"
 
-// #include "./include/skmsg.h"
-// #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_core_read.h>
@@ -202,16 +199,12 @@ int BPF_KPROBE(tcp_set_state, struct sock* sk, int state)
     // 获取tcp连接状态
     struct sock_common skp = BPF_CORE_READ(sk, __sk_common);
     int oldstate = skp.skc_state;
-    // bpf_printk("tcp_set_state: %d -> %d", oldstate, state);
 
     // 获取套接字的四元组信息
     __u32 remote_addr = bpf_ntohl(skp.skc_daddr);
     __u32 local_addr = bpf_ntohl(skp.skc_rcv_saddr);
     __u16 remote_port = bpf_ntohs(skp.skc_dport);
     __u16 local_port = skp.skc_num;
-
-    // bpf_printk("< KPROBE: tcp_set_state> SAddr[%x] -> DAddr[%x]", local_addr, remote_addr);
-    // bpf_printk("< KPROBE: tcp_set_state> Sport[%x] -> Dport[%x]", local_port, remote_port);
 
 
     if(state == TCP_ESTABLISHED){    // 连接成功 可以发送数据
@@ -220,11 +213,9 @@ int BPF_KPROBE(tcp_set_state, struct sock* sk, int state)
         if(connection_cnt_ptr){
             *connection_cnt_ptr  += 1;
             bpf_map_update_elem(&ip_connections_map, &local_addr, connection_cnt_ptr, BPF_EXIST);
-            // bpf_printk("< KPROBE: tcp_set_state> addr = %x, connection count = %d", local_addr, *connection_cnt_ptr);
         }else{
             __u32 temp_connection_cnt = 1;
             bpf_map_update_elem(&ip_connections_map, &local_addr, &temp_connection_cnt, BPF_NOEXIST);
-            // bpf_printk("< KPROBE: tcp_set_state> connection count = 1");
         }
     }
 
@@ -235,10 +226,8 @@ int BPF_KPROBE(tcp_set_state, struct sock* sk, int state)
             if(*connection_cnt_ptr > 1){
                 *connection_cnt_ptr  -= 1;
                 bpf_map_update_elem(&ip_connections_map, &local_addr, connection_cnt_ptr, BPF_EXIST);
-                // bpf_printk("< KPROBE: tcp_set_state> addr = %x, connection count = %d", local_addr, *connection_cnt_ptr);
             }else{
                 bpf_map_delete_elem(&ip_connections_map, &local_addr);
-                // bpf_printk("< KPROBE: tcp_set_state> connection count = 0");
             }
             
         }
@@ -271,8 +260,7 @@ int tc_ingress(struct __sk_buff *ctx)
 	l3 = (struct iphdr *)(l2 + 1);
 	if ((void *)(l3 + 1) > data_end)
 		return TC_ACT_OK;
-    //bpf_printk("Got IP packet: tot_len: %d, ttl: %d, protocol = %d", bpf_ntohs(l3->tot_len), l3->ttl, l3->protocol);
-
+    
     __u8 protocol = l3->protocol;
     if(protocol != 6) // TCP协议
         return TC_ACT_OK;
@@ -292,9 +280,6 @@ int tc_ingress(struct __sk_buff *ctx)
     if(kubelet_probe)
         return TC_ACT_OK;
 
-    // bpf_printk("ip: from %x -> %x, len =%d", src_ip, dst_ip, l4->doff);
-    // bpf_printk("port: from %d -> %d", src_port, dst_port);
-
     l7 = (void *) l4;
     l7 = l7 + (l4->doff * 4); // res1是tcp头部的占byte数目,为1则占4byte,以此类推。这里的长度包括tcpoptions的长度
     if ((void *)(l7 + 15) > data_end)
@@ -308,12 +293,10 @@ int tc_ingress(struct __sk_buff *ctx)
     if(send_cnt_ptr){
         *send_cnt_ptr += 1;
         bpf_map_update_elem(&ip_send_cnt_map, &src_ip, send_cnt_ptr, BPF_EXIST);
-        // bpf_printk("ADDR: %x, send_cnt = %d", local_addr, *send_cnt_ptr);
         
     }else{
         __u32 send_cnt = 1;
         bpf_map_update_elem(&ip_send_cnt_map, &src_ip, &send_cnt, BPF_NOEXIST);
-        // bpf_printk("ADDR: %x, send_cnt = %d", local_addr, send_cnt);
     }
 
     // 更新error rate和响应比例, 延时bucket的相关map
@@ -353,7 +336,7 @@ int tc_ingress(struct __sk_buff *ctx)
         __u64 response_duration = send_timestamp - (*recv_timestamp); // ns
         __u64 ms_duration = response_duration / 10000; // * ms * 100，记录格式为1.01 -> 101
         __u32 server_ip = src_ip;
-        // bpf_printk("Response duration: %d, %x", ms_duration , server_ip);
+        
         struct ddskectch_bucket * data_bucket = bpf_map_lookup_elem(&socket_latency_bucket_curr_map, &server_ip); 
         if(data_bucket){
             // 插入元素
@@ -472,7 +455,6 @@ int tc_egress(struct __sk_buff *ctx)
 	l3 = (struct iphdr *)(l2 + 1);
 	if ((void *)(l3 + 1) > data_end)
 		return TC_ACT_OK;
-    //bpf_printk("Got IP packet: tot_len: %d, ttl: %d, protocol = %d", bpf_ntohs(l3->tot_len), l3->ttl, l3->protocol);
 
     __u8 protocol = l3->protocol;
     if(protocol != 6) // TCP协议
@@ -493,27 +475,18 @@ int tc_egress(struct __sk_buff *ctx)
     if(kubelet_probe)
         return TC_ACT_OK;
 
-    // bpf_printk("ip: from %x -> %x, len =%d", src_ip, dst_ip, l4->doff);
-    // bpf_printk("port: from %d -> %d", src_port, dst_port);
-    
-    // l7 = (void *) l4;
-    // l7 = l7 + (l4->doff * 4); // res1是tcp头部的占byte数目,为1则占4byte,以此类推。这里的长度包括tcpoptions的长度
-
     // 只要有数据就认为是请求
     if (ctx->len == data_end - data)
         return TC_ACT_OK;
 
-    // bpf_printk("TC Egress, skb_len = %d, ttl = %d, remain data len = %d", ctx->len, data_end - data, data_end - (void*)l7);
     // 记录调用接收次数
     __u32 *recv_cnt_ptr = bpf_map_lookup_elem(&ip_recv_cnt_map, &dst_ip);
     if(recv_cnt_ptr){
         *recv_cnt_ptr += 1;
         bpf_map_update_elem(&ip_recv_cnt_map, &dst_ip, recv_cnt_ptr, BPF_EXIST);
-        // bpf_printk("ADDR: %x, recv_cnt = %d", local_addr, *recv_cnt_ptr);
     }else{
         __u32 recv_cnt = 1;
         bpf_map_update_elem(&ip_recv_cnt_map, &dst_ip, &recv_cnt, BPF_NOEXIST);
-        // bpf_printk("ADDR: %x, recv_cnt = %d", local_addr, recv_cnt);
     }
 
     // 记录服务器接收请求时间
@@ -536,6 +509,7 @@ bool judgeReady(__u32 ip){
     // 判断当前IP是否ready
     char fmt_debug_0[] = "Judging Ready: ip = %x";
     bpf_trace_printk(fmt_debug_0, sizeof(fmt_debug_0), ip);	
+
     // 1. error_rate > 50%（固定阈值）
     __u32 *correct_cnt_ptr = bpf_map_lookup_elem(&http_correct_map, &ip);
     __u32 *error_cnt_ptr = bpf_map_lookup_elem(&http_error_map, &ip); 
@@ -564,8 +538,6 @@ bool judgeReady(__u32 ip){
             return false;
         }
     }
-    // char fmt_debug_1[] = "1: error rate check";	
-    // bpf_trace_printk(fmt_debug_1, sizeof(fmt_debug_1));
 
     // 2. 连接数 > 固定阈值
     __u32 *connection_cnt_ptr = bpf_map_lookup_elem(&ip_connections_map, &ip);
@@ -583,9 +555,6 @@ bool judgeReady(__u32 ip){
         bpf_ringbuf_output(&not_ready_ringbuf, &event_data, sizeof(struct ringbuff_event), 0);
         return false;
     }
-    // char fmt_debug_2[] = "2: connection check";	
-    // bpf_trace_printk(fmt_debug_2, sizeof(fmt_debug_2));
-
 
     // 3. 响应比例 < 20%（固定阈值）
     __u32 * recv_cnt_ptr = bpf_map_lookup_elem(&ip_recv_cnt_map, &ip);
@@ -622,9 +591,6 @@ bool judgeReady(__u32 ip){
             }
         }
     } 
-    // char fmt_debug_3[] = "3: response rate check";	
-    // bpf_trace_printk(fmt_debug_3, sizeof(fmt_debug_3));
-
     // 4. 响应延时（30%的请求超过前一段时间的P90）即当前的P70 > 上一个时间段的P90
     struct ddskectch_bucket* data_curr_bucket = bpf_map_lookup_elem(&socket_latency_bucket_curr_map, &ip);
     struct ddskectch_bucket* data_prev_bucket = bpf_map_lookup_elem(&socket_latency_bucket_prev_map, &ip);
@@ -634,25 +600,6 @@ bool judgeReady(__u32 ip){
             __u32 prev_p90_index = data_prev_bucket->p90_index;
             __u32 curr_p70_index = data_curr_bucket->p70_index;
 
-
-            // __u32 temp_cnt_sum = 0;
-            // for(int i = 0; i < DDSKETCH_M; i ++){
-            //     temp_cnt_sum += data_prev_bucket->bucket[i];
-            //     if(temp_cnt_sum > prev_p90_count){
-            //         prev_p90_index = i;
-            //         break;
-            //     }
-            // }
-            // temp_cnt_sum = 0;
-            // for(int i = 0; i < DDSKETCH_M; i ++){
-            //     temp_cnt_sum += data_curr_bucket->bucket[i];
-            //     if(temp_cnt_sum > curr_p70_count){
-            //         curr_p70_index = i;
-            //         break;
-            //     }
-            // }
-            // char fmt_ready_7[] = "(IP = %x) Sketch: curr_p70_count = %d, prev_p90_count = %d";	
-            // bpf_trace_printk(fmt_ready_7, sizeof(fmt_ready_7), ip, curr_p70_count, prev_p90_count);
             char fmt_ready_8[] = "(IP = %x) Sketch: curr_p70_index = %d, prev_p90_index = %d";	
             bpf_trace_printk(fmt_ready_8, sizeof(fmt_ready_8), ip, curr_p70_index, prev_p90_index);
 
@@ -672,8 +619,6 @@ bool judgeReady(__u32 ip){
         }
     }
     
-    // char fmt_ready_7[] = "Ready: For IP(%x)";	
-    // bpf_trace_printk(fmt_ready_7, sizeof(fmt_ready_7), ip);
     return true;
 }
 
@@ -688,9 +633,6 @@ int xdp_cni0_prog(struct xdp_md* ctx){
 	struct iphdr *l3;
     struct my_tcphdr *l4;
     __u8 *l7;
-
-	// if (ctx->protocol != bpf_htons(ETH_P_IP))
-	// 	return XDP_PASS;
 
 	l2 = data;
 	if ((void *)(l2 + 1) > data_end)
@@ -717,39 +659,16 @@ int xdp_cni0_prog(struct xdp_md* ctx){
     __u16 src_port = bpf_ntohs(l4->source);
     __u16 dst_port = bpf_ntohs(l4->dest);
 
-	// if(dst_ip != 0x103f40a)
-	// 	return XDP_PASS;
-    // if(src_ip != 0xc703f40a && src_ip != 0xd303f40a)
-    // // if(src_ip != 0xd303f40a)
-    //     return XDP_PASS;
-
-    // char fmt1[] = "ip: from %x -> %x, skb_len = %d";	
-	// bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip, data_end - data);
-
-
 
     int *kubelet_probe_return = bpf_map_lookup_elem(&monitoring_ip_map, &dst_ip);
     if(!kubelet_probe_return){
         // 非探针包，需要统计不同服务的错误率
-        
-        // char fmt1[] = "ip: from %x -> %x, skb_len = %d";	
-	    // bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip, data_end - data);
-
-        // if(src_ip != 0x0af40362)
-        //     return XDP_PASS;
-
-        // char fmt2[] = "Not a kubelet probe";	
-	    // bpf_trace_printk(fmt2, sizeof(fmt2));
         
         if ((void *)(l7 + BUFF_DATA_LEN) > data_end)
             return XDP_PASS;
 
         __u8 temp_data[BUFF_DATA_LEN];
         __builtin_memcpy(temp_data, l7, BUFF_DATA_LEN);
-        // for(int i = 0; i < BUFF_DATA_LEN; i ++){
-        //     char fmt6[] = "data[%d] = %d";	
-        //     bpf_trace_printk(fmt6, sizeof(fmt6), i, temp_data[i]);
-        // }
 
         // 判断如果是HTTP包
         if(temp_data[0] == 'H' && temp_data[1] == 'T' && temp_data[2] == 'T' && temp_data[3] == 'P'){
@@ -770,11 +689,9 @@ int xdp_cni0_prog(struct xdp_md* ctx){
                         __u32 correct_cnt = *correct_cnt_ptr;
                         correct_cnt =  correct_cnt + 1;
                         int ret = bpf_map_update_elem(&http_correct_map, &src_ip, &correct_cnt, BPF_ANY);
-                        // bpf_printk("YES! ADDR: %x, correct_cnt = %d, ret = %d", src_ip, correct_cnt, ret);
                     }else{
                         __u32 correct_cnt = 1;
                         int ret = bpf_map_update_elem(&http_correct_map, &src_ip, &correct_cnt, BPF_ANY);
-                        // bpf_printk("NULL! ADDR: %x, correct_cnt = %d, ret = %d", src_ip, correct_cnt, ret);
                     }
                     
                 }
@@ -784,11 +701,9 @@ int xdp_cni0_prog(struct xdp_md* ctx){
                     if(error_cnt_ptr){
                         *error_cnt_ptr += 1;
                         bpf_map_update_elem(&http_error_map, &src_ip, error_cnt_ptr, BPF_EXIST);
-                        // bpf_printk("ADDR: %x, error_cnt = %d", src_ip, *error_cnt_ptr);
                     }else{
                         __u32 error_cnt = 1;
                         bpf_map_update_elem(&http_error_map, &src_ip, &error_cnt, BPF_NOEXIST);
-                        // bpf_printk("ADDR: %x, error_cnt = %d", src_ip, error_cnt);
                     }
                 }
             }
@@ -801,11 +716,9 @@ int xdp_cni0_prog(struct xdp_md* ctx){
                 if(error_cnt_ptr){
                     *error_cnt_ptr += 1;
                     bpf_map_update_elem(&http_error_map, &src_ip, error_cnt_ptr, BPF_EXIST);
-                    // bpf_printk("Mysql -- ADDR: %x, error_cnt = %d", src_ip, *error_cnt_ptr);
                 }else{
                     __u32 error_cnt = 1;
                     bpf_map_update_elem(&http_error_map, &src_ip, &error_cnt, BPF_NOEXIST);
-                    // bpf_printk("Mysql -- ADDR: %x, error_cnt = %d", src_ip, error_cnt);
                 }
             }
             else{
@@ -814,11 +727,9 @@ int xdp_cni0_prog(struct xdp_md* ctx){
                     __u32 correct_cnt = *correct_cnt_ptr;
                     correct_cnt =  correct_cnt + 1;
                     int ret = bpf_map_update_elem(&http_correct_map, &src_ip, &correct_cnt, BPF_ANY);
-                    // bpf_printk("YES! ADDR: %x, correct_cnt = %d, ret = %d", src_ip, correct_cnt, ret);
                 }else{
                     __u32 correct_cnt = 1;
                     int ret = bpf_map_update_elem(&http_correct_map, &src_ip, &correct_cnt, BPF_ANY);
-                    // bpf_printk("NULL! ADDR: %x, correct_cnt = %d, ret = %d", src_ip, correct_cnt, ret);
                 }
                 
             }
@@ -828,26 +739,15 @@ int xdp_cni0_prog(struct xdp_md* ctx){
         return XDP_PASS;
     }
 
-    // ！！！探针包处理
-
-	// char fmt1[] = "ip: from %x -> %x, skb_len = %d";	
-	// bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip, data_end - data);
-	// char fmt2[] = "ip: from %x -> %x, sizeof(tcphdr) = %d";	
-	// bpf_trace_printk(fmt2, sizeof(fmt2), src_port, dst_port, l4->res1);
-
+    // 探针包处理
     bool is_ready = judgeReady(src_ip);
     
     // 判断是HTTP probe模式还是 tcp probe 模式
     __u16 *is_tcp_probe = bpf_map_lookup_elem(&tcp_probes_ips, &src_ip);
     if(is_tcp_probe){
 
-        // char fmt1[] = "TCP probe : (ip)from %x -> %x, skb_len = %d";	
-	    // bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip, data_end - data);
-
         // 判断是否就绪
         if(is_ready){
-            // char fmt1[] = "TCP probe : (ip)from %x -> %x, ready";	
-	        // bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip);
             return XDP_PASS;
         }else{
             char fmt1[] = "TCP probe : (ip)from %x -> %x, not ready";	
@@ -860,32 +760,20 @@ int xdp_cni0_prog(struct xdp_md* ctx){
     if(is_http_probe){
         // 判断是否就绪
         if(is_ready){
-            // char fmt1[] = "HTTP probe : (ip)from %x -> %x, ready";	
-	        // bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip);
             return XDP_PASS;
         }else{
             char fmt1[] = "HTTP probe : (ip)from %x -> %x, not ready";	
 	        // bpf_trace_printk(fmt1, sizeof(fmt1), src_ip, dst_ip);
             if ((void *)(l7 + 100) > data_end)
                 return XDP_PASS;
-            // else
-            //     return XDP_DROP; // tcp probe
-
-            // char fmt3[] = "Entering, skb_len = %d, ip_len = %d, tcphdr_size = %x";	
-            // bpf_trace_printk(fmt3, sizeof(fmt3), data_end - data, bpf_ntohs(l3->tot_len), l4->res1);
 
             // 尝试修改http返回码
             if(*(l7+0) == 'H' && *(l7+1) == 'T' && *(l7+2) == 'T' && *(l7+3) == 'P'){
-                // char fmt4[] = "HTTP";	
-                // bpf_trace_printk(fmt4, sizeof(fmt4));
                 // 是HTTP数据包
                 __u8 modify_index = 0;
                 char fmt5[] = "Return code = %x, %x, %x";	
 
                 for(int i = 4; i < 20; i ++){
-                    // char fmt6[] = "data[%d] = %d";	
-                    // bpf_trace_printk(fmt6, sizeof(fmt6), i, *(l7+i));
-                    
                     // 如果是200返回码 修改为500
                     if((void *) (l7 + i + 2) < data_end  && *(l7+i) == '2' && *(l7+i+1) == '0' && *(l7+i+2) == '0') {
                         modify_index = i;
@@ -900,8 +788,6 @@ int xdp_cni0_prog(struct xdp_md* ctx){
 
                 __u8 modify_return_code[1] = {'5'};
                 __builtin_memcpy(l7, modify_return_code, 1);
-                // *(l7+i+1) = '0';
-                // *(l7+i+2) = '0';
             }
             return XDP_PASS;
         }

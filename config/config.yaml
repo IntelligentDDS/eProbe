@@ -1,0 +1,10 @@
+MonitorAddress:
+  - ip: 10.108.94.162
+    port: 9080
+    name: productpage-svc
+
+MonitorProcess:
+  - pid: 1941
+    name: test1
+  # - pid: 23456
+  #   name: test2
